@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { collection, addDoc, Timestamp } from 'firebase/firestore';
 import { db } from '../../../firebase/config';
@@ -20,73 +20,27 @@ export const PostRide: React.FC = () => {
     description: '',
   });
 
-  // DEBUG: Check everything on mount
-  useEffect(() => {
-    console.log('🔍 === DEBUG INFO ===');
-    console.log('Current User:', currentUser);
-    console.log('User ID:', currentUser?.uid);
-    console.log('User Email:', currentUser?.email);
-    console.log('User Profile:', userProfile);
-    console.log('DB Instance:', db);
-    console.log('DB Type:', typeof db);
-    console.log('===================');
-  }, [currentUser, userProfile]);
-
-  // Test Firebase button
-  const testFirebase = async () => {
-    console.log('🧪 Testing Firebase connection...');
-    try {
-      const testData = {
-        test: 'Hello Firebase',
-        timestamp: Timestamp.now(),
-        user: currentUser?.uid || 'no-user'
-      };
-      
-      console.log('Test data:', testData);
-      const docRef = await addDoc(collection(db, 'test'), testData);
-      console.log('✅ Test SUCCESS! Doc ID:', docRef.id);
-      toast.success(`Firebase works! Doc ID: ${docRef.id}`);
-    } catch (error: any) {
-      console.error('❌ Test FAILED:', error);
-      console.error('Error code:', error?.code);
-      console.error('Error message:', error?.message);
-      toast.error(`Test failed: ${error?.message}`);
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('\n🚀 === STARTING RIDE POST ===');
 
-    // Check authentication
+    // Validate authentication
     if (!currentUser) {
-      console.error('❌ No current user');
       toast.error('Please login first');
       return;
     }
-    console.log('✅ User authenticated:', currentUser.uid);
 
-    // Check profile
-    if (!userProfile) {
-      console.warn('⚠️ No user profile, will use defaults');
-    } else {
-      console.log('✅ User profile loaded:', userProfile);
-    }
-
-    // Validate form
+    // Validate required fields
     if (!formData.from || !formData.to || !formData.date || !formData.time) {
-      console.error('❌ Missing required fields');
       toast.error('Please fill in all required fields');
       return;
     }
-    console.log('✅ Form validated');
 
     setIsLoading(true);
     
     try {
-      // Build the data object
+      // Prepare ride data with proper fallbacks
       const rideData = {
-        // User info with fallbacks
+        // Driver information
         driverId: currentUser.uid,
         driverName: userProfile?.displayName || currentUser.displayName || currentUser.email?.split('@')[0] || 'Anonymous',
         driverPhoto: userProfile?.photoURL || currentUser.photoURL || '',
@@ -101,7 +55,7 @@ export const PostRide: React.FC = () => {
         pricePerSeat: parseFloat(String(formData.pricePerSeat)) || 0,
         description: formData.description.trim(),
         
-        // Vehicle info with fallback
+        // Vehicle information
         vehicleInfo: userProfile?.vehicleInfo || {
           make: 'Not specified',
           model: 'Not specified',
@@ -109,25 +63,15 @@ export const PostRide: React.FC = () => {
           licensePlate: 'Not specified'
         },
         
-        // Status
+        // Status and metadata
         status: 'upcoming',
         createdAt: Timestamp.now(),
         passengers: [],
       };
 
-      console.log('📦 Ride data prepared:', rideData);
-      console.log('📦 Data types:', {
-        driverId: typeof rideData.driverId,
-        driverName: typeof rideData.driverName,
-        date: rideData.date.constructor.name,
-        availableSeats: typeof rideData.availableSeats,
-        pricePerSeat: typeof rideData.pricePerSeat,
-      });
-
-      console.log('💾 Attempting to write to Firestore...');
-      const docRef = await addDoc(collection(db, 'rides'), rideData);
+      // Add document to Firestore
+      await addDoc(collection(db, 'rides'), rideData);
       
-      console.log('✅ SUCCESS! Ride posted with ID:', docRef.id);
       toast.success('Ride posted successfully!');
       
       // Reset form
@@ -141,38 +85,24 @@ export const PostRide: React.FC = () => {
         description: '',
       });
       
+      // Navigate to my rides after short delay
       setTimeout(() => navigate('/my-rides'), 1000);
       
     } catch (error: any) {
-      console.error('\n❌ === ERROR POSTING RIDE ===');
-      console.error('Error object:', error);
-      console.error('Error type:', error?.constructor?.name);
-      console.error('Error code:', error?.code);
-      console.error('Error message:', error?.message);
-      console.error('Error stack:', error?.stack);
-      
-      // Try to stringify the error
-      try {
-        console.error('Error JSON:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
-      } catch (e) {
-        console.error('Could not stringify error');
-      }
-      
-      // User-friendly error message
-      let userMessage = 'Failed to post ride';
+      // Handle errors with user-friendly messages
+      let errorMessage = 'Failed to post ride. Please try again.';
       
       if (error?.code === 'unavailable') {
-        userMessage = 'Network error. Please check your internet connection.';
+        errorMessage = 'Network error. Please check your internet connection.';
       } else if (error?.code === 'permission-denied') {
-        userMessage = 'Permission denied. Please try logging out and back in.';
+        errorMessage = 'Permission denied. Please try logging out and back in.';
       } else if (error?.code === 'unauthenticated') {
-        userMessage = 'Authentication error. Please login again.';
+        errorMessage = 'Authentication error. Please login again.';
       } else if (error?.message) {
-        userMessage = `Error: ${error.message}`;
+        errorMessage = error.message;
       }
       
-      toast.error(userMessage);
-      console.error('=========================\n');
+      toast.error(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -192,28 +122,9 @@ export const PostRide: React.FC = () => {
         <div className="bg-white rounded-2xl shadow-xl p-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-6">Post a Ride</h1>
           
-          {/* DEBUG PANEL - Remove this after fixing */}
-          <div className="mb-6 p-4 bg-yellow-50 border-2 border-yellow-200 rounded-lg">
-            <h3 className="font-bold text-yellow-900 mb-2">🔧 Debug Panel</h3>
-            <div className="text-sm space-y-1 text-gray-700">
-              <p>User Authenticated: {currentUser ? '✅ Yes' : '❌ No'}</p>
-              <p>User ID: {currentUser?.uid || 'N/A'}</p>
-              <p>User Email: {currentUser?.email || 'N/A'}</p>
-              <p>Profile Loaded: {userProfile ? '✅ Yes' : '❌ No'}</p>
-              <p>Profile Name: {userProfile?.displayName || 'N/A'}</p>
-              <p>Database: {db ? '✅ Connected' : '❌ Not Connected'}</p>
-            </div>
-            <button
-              type="button"
-              onClick={testFirebase}
-              className="mt-3 px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 text-sm font-medium"
-            >
-              🧪 Test Firebase Connection
-            </button>
-          </div>
-
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* From Location */}
               <div>
                 <label htmlFor="from" className="block text-sm font-medium text-gray-700 mb-1">
                   From <span className="text-red-500">*</span>
@@ -225,11 +136,12 @@ export const PostRide: React.FC = () => {
                   required
                   value={formData.from}
                   onChange={handleChange}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
                   placeholder="Starting location"
                 />
               </div>
 
+              {/* To Location */}
               <div>
                 <label htmlFor="to" className="block text-sm font-medium text-gray-700 mb-1">
                   To <span className="text-red-500">*</span>
@@ -241,11 +153,12 @@ export const PostRide: React.FC = () => {
                   required
                   value={formData.to}
                   onChange={handleChange}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
                   placeholder="Destination"
                 />
               </div>
 
+              {/* Date */}
               <div>
                 <label htmlFor="date" className="block text-sm font-medium text-gray-700 mb-1">
                   Date <span className="text-red-500">*</span>
@@ -258,10 +171,11 @@ export const PostRide: React.FC = () => {
                   value={formData.date}
                   onChange={handleChange}
                   min={new Date().toISOString().split('T')[0]}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
                 />
               </div>
 
+              {/* Time */}
               <div>
                 <label htmlFor="time" className="block text-sm font-medium text-gray-700 mb-1">
                   Time <span className="text-red-500">*</span>
@@ -273,10 +187,11 @@ export const PostRide: React.FC = () => {
                   required
                   value={formData.time}
                   onChange={handleChange}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
                 />
               </div>
 
+              {/* Available Seats */}
               <div>
                 <label htmlFor="availableSeats" className="block text-sm font-medium text-gray-700 mb-1">
                   Available Seats
@@ -286,7 +201,7 @@ export const PostRide: React.FC = () => {
                   name="availableSeats"
                   value={formData.availableSeats}
                   onChange={handleChange}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
                 >
                   {[1, 2, 3, 4, 5, 6].map(num => (
                     <option key={num} value={num}>{num}</option>
@@ -294,6 +209,7 @@ export const PostRide: React.FC = () => {
                 </select>
               </div>
 
+              {/* Price Per Seat */}
               <div>
                 <label htmlFor="pricePerSeat" className="block text-sm font-medium text-gray-700 mb-1">
                   Price per Seat ($)
@@ -306,12 +222,13 @@ export const PostRide: React.FC = () => {
                   step="0.01"
                   value={formData.pricePerSeat}
                   onChange={handleChange}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
                   placeholder="0.00"
                 />
               </div>
             </div>
 
+            {/* Description */}
             <div>
               <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
                 Description (Optional)
@@ -322,11 +239,12 @@ export const PostRide: React.FC = () => {
                 rows={4}
                 value={formData.description}
                 onChange={handleChange}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none"
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none transition"
                 placeholder="Add any additional details about your ride..."
               />
             </div>
 
+            {/* Submit Button */}
             <button
               type="submit"
               disabled={isLoading}
