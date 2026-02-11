@@ -4,7 +4,6 @@ import { collection, addDoc } from 'firebase/firestore';
 import { db } from '../../../firebase/config';
 import { useAuth } from '../../../contexts/AuthContext';
 import toast from 'react-hot-toast';
-import { Ride } from '../../../types';
 import { Timestamp } from 'firebase/firestore';
 
 export const PostRide: React.FC = () => {
@@ -35,40 +34,50 @@ export const PostRide: React.FC = () => {
       return;
     }
 
+    // Validate pricePerSeat
+    const pricePerSeat = formData.pricePerSeat ? Number(formData.pricePerSeat) : 0;
+    if (isNaN(pricePerSeat)) {
+      toast.error('Invalid price');
+      return;
+    }
+
     setIsLoading(true);
     try {
-      const rideData: Omit<Ride, 'id'> = {
+      const rideDataWithTimestamps = {
         driverId: currentUser.uid,
-        driverName: userProfile.displayName,
-        driverPhoto: userProfile.photoURL,
-        driverRating: userProfile.rating,
+        driverName: userProfile.displayName || 'Anonymous',
+        driverPhoto: userProfile.photoURL || '',
+        driverRating: userProfile.rating || 0,
         from: formData.from,
         to: formData.to,
-        date: new Date(formData.date),
+        date: Timestamp.fromDate(new Date(formData.date)),
         time: formData.time,
-        availableSeats: formData.availableSeats,
-       pricePerSeat: Number(formData.pricePerSeat),
+        availableSeats: Number(formData.availableSeats),
+        pricePerSeat: pricePerSeat,
         description: formData.description,
-        vehicleInfo: userProfile.vehicleInfo,
+        vehicleInfo: userProfile.vehicleInfo || {
+          make: '',
+          model: '',
+          color: '',
+          licensePlate: ''
+        },
         status: 'upcoming',
-        createdAt: new Date(),
+        createdAt: Timestamp.fromDate(new Date()),
         passengers: [],
       };
 
-      // Fix: remove the Omit<Ride,'id'> annotation so Timestamp assignments don't conflict with Ride's Date types
-      const rideDataWithTimestamps = {
-        ...rideData,
-        date: Timestamp.fromDate(new Date(formData.date)),
-        createdAt: Timestamp.fromDate(new Date()),
-      };
+      console.log('Attempting to post ride:', rideDataWithTimestamps);
 
-      await addDoc(collection(db, 'rides'), rideDataWithTimestamps);
-
+      const docRef = await addDoc(collection(db, 'rides'), rideDataWithTimestamps);
+      
+      console.log('Ride posted successfully with ID:', docRef.id);
       toast.success('Ride posted successfully!');
       navigate('/my-rides');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error posting ride:', error);
-      toast.error('Failed to post ride');
+      console.error('Error code:', error.code);
+      console.error('Error message:', error.message);
+      toast.error(`Failed to post ride: ${error.message}`);
     } finally {
       setIsLoading(false);
     }
@@ -78,7 +87,7 @@ export const PostRide: React.FC = () => {
     const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,
-      [name]: name === 'availableSeats' || name === 'pricePerSeat' ? Number(value) : value,
+      [name]: value, // Keep as string, convert only on submit
     }));
   };
 
