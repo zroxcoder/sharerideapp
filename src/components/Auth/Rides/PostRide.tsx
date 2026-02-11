@@ -5,6 +5,7 @@ import { db } from '../../../firebase/config';
 import { useAuth } from '../../../contexts/AuthContext';
 import toast from 'react-hot-toast';
 import { Ride } from '../../../types';
+import { Timestamp } from 'firebase/firestore';
 
 export const PostRide: React.FC = () => {
   const { currentUser, userProfile } = useAuth();
@@ -54,11 +55,14 @@ export const PostRide: React.FC = () => {
         passengers: [],
       };
 
-      await addDoc(collection(db, 'rides'), {
+      // Fix: remove the Omit<Ride,'id'> annotation so Timestamp assignments don't conflict with Ride's Date types
+      const rideDataWithTimestamps = {
         ...rideData,
-        date: formData.date,
-        createdAt: new Date().toISOString(),
-      });
+        date: Timestamp.fromDate(new Date(formData.date)),
+        createdAt: Timestamp.fromDate(new Date()),
+      };
+
+      await addDoc(collection(db, 'rides'), rideDataWithTimestamps);
 
       toast.success('Ride posted successfully!');
       navigate('/my-rides');
