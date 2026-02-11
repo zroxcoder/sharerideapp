@@ -18,7 +18,7 @@ export const PostRide: React.FC = () => {
     date: '',
     time: '',
     availableSeats: 1,
-    pricePerSeat: 0,
+    pricePerSeat: '',
     description: '',
   });
 
@@ -47,7 +47,7 @@ export const PostRide: React.FC = () => {
         date: new Date(formData.date),
         time: formData.time,
         availableSeats: formData.availableSeats,
-        pricePerSeat: formData.pricePerSeat,
+       pricePerSeat: Number(formData.pricePerSeat),
         description: formData.description,
         vehicleInfo: userProfile.vehicleInfo,
         status: 'upcoming',
