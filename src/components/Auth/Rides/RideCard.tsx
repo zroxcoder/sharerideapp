@@ -1,5 +1,6 @@
 import React from 'react';
 import { format } from 'date-fns';
+import { Timestamp } from 'firebase/firestore'; // ✅ Add this import
 import { Ride } from '../../../types';
 
 interface RideCardProps {
@@ -10,7 +11,12 @@ interface RideCardProps {
 }
 
 export const RideCard: React.FC<RideCardProps> = ({ ride, onBook, isOwner, showBookButton = true }) => {
-  const rideDate = ride.date instanceof Date ? ride.date : new Date(ride.date);
+  // ✅ Fixed: Handle both Date and Timestamp
+  const rideDate = ride.date instanceof Date 
+    ? ride.date 
+    : ride.date instanceof Timestamp 
+      ? ride.date.toDate() 
+      : new Date(ride.date);
 
   return (
     <div className="bg-white rounded-2xl shadow-lg p-6 hover:shadow-xl transition">

@@ -1,10 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, addDoc, Timestamp } from 'firebase/firestore';
+import { 
+  collection, 
+  query, 
+  where, 
+  getDocs, 
+  addDoc, 
+  Timestamp, 
+  doc, 
+  runTransaction 
+} from 'firebase/firestore';
 import { db } from '../../../firebase/config';
 import { useAuth } from '../../../contexts/AuthContext';
 import { Ride, Booking } from '../../../types';
 import { RideCard } from './RideCard';
 import toast from 'react-hot-toast';
+
+// Helper to convert Timestamp to Date
+const toDate = (dateOrTimestamp: Date | Timestamp): Date => {
+  if (dateOrTimestamp instanceof Timestamp) {
+    return dateOrTimestamp.toDate();
+  }
+  return dateOrTimestamp;
+};
 
 export const FindRide: React.FC = () => {
   const { currentUser, userProfile } = useAuth();
@@ -18,23 +35,25 @@ export const FindRide: React.FC = () => {
     setLoading(true);
     try {
       const ridesRef = collection(db, 'rides');
-      let q = query(ridesRef, where('status', '==', 'upcoming'));
+      const q = query(ridesRef, where('status', '==', 'upcoming'));
 
       const querySnapshot = await getDocs(q);
       const ridesData: Ride[] = [];
 
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
+      querySnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
         ridesData.push({
-          id: doc.id,
+          id: docSnap.id,
           ...data,
           date: data.date instanceof Timestamp ? data.date.toDate() : new Date(data.date),
           createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate() : new Date(data.createdAt),
         } as Ride);
       });
 
-      // Filter rides
-      let filteredRides = ridesData.filter(ride => ride.driverId !== currentUser?.uid);
+      let filteredRides = ridesData.filter(ride => 
+        ride.driverId !== currentUser?.uid && 
+        ride.availableSeats > 0
+      );
 
       if (searchFrom) {
         filteredRides = filteredRides.filter(ride =>
@@ -50,15 +69,14 @@ export const FindRide: React.FC = () => {
 
       if (searchDate) {
         filteredRides = filteredRides.filter(ride => {
-          const rideDate = ride.date instanceof Date ? ride.date : new Date(ride.date);
+          const rideDate = toDate(ride.date);
           return rideDate.toISOString().split('T')[0] === searchDate;
         });
       }
 
-      // Sort by date
       filteredRides.sort((a, b) => {
-        const dateA = a.date instanceof Date ? a.date : new Date(a.date);
-        const dateB = b.date instanceof Date ? b.date : new Date(b.date);
+        const dateA = toDate(a.date);
+        const dateB = toDate(b.date);
         return dateA.getTime() - dateB.getTime();
       });
 
@@ -86,47 +104,109 @@ export const FindRide: React.FC = () => {
       return;
     }
 
-    try {
-      const booking: Omit<Booking, 'id'> = {
-        rideId: ride.id,
-        riderId: currentUser.uid,
-        riderName: userProfile.displayName,
-        riderPhoto: userProfile.photoURL,
-        seatsBooked: 1,
-        totalPrice: ride.pricePerSeat,
-        status: 'pending',
-        createdAt: new Date(),
-      };
+    if (ride.availableSeats < 1) {
+      toast.error('No available seats for this ride');
+      return;
+    }
 
-      await addDoc(collection(db, 'bookings'), {
-        ...booking,
-        createdAt: new Date().toISOString(),
+    try {
+      const existingBookingsQuery = query(
+        collection(db, 'bookings'),
+        where('rideId', '==', ride.id),
+        where('riderId', '==', currentUser.uid)
+      );
+      const existingBookings = await getDocs(existingBookingsQuery);
+
+      if (!existingBookings.empty) {
+        toast.error('You have already booked this ride');
+        return;
+      }
+
+      await runTransaction(db, async (transaction) => {
+        const rideRef = doc(db, 'rides', ride.id);
+        const rideDoc = await transaction.get(rideRef);
+
+        if (!rideDoc.exists()) {
+          throw new Error('Ride not found');
+        }
+
+        const currentSeats = rideDoc.data().availableSeats;
+        if (currentSeats < 1) {
+          throw new Error('No available seats');
+        }
+
+        const bookingRef = doc(collection(db, 'bookings'));
+        const bookingData: Booking = {
+          rideId: ride.id,
+          riderId: currentUser.uid,
+          riderName: userProfile.displayName || currentUser.email?.split('@')[0] || 'Anonymous',
+          riderPhoto: userProfile.photoURL || '',
+          seatsBooked: 1,
+          totalPrice: ride.pricePerSeat,
+          status: 'pending',
+          createdAt: Timestamp.now(), // ✅ Now works!
+        };
+
+        transaction.set(bookingRef, bookingData);
+        transaction.update(rideRef, {
+          availableSeats: currentSeats - 1
+        });
       });
 
-      // Create a chat between rider and driver
-      const chatData = {
-        participants: [currentUser.uid, ride.driverId],
-        participantDetails: {
-          [currentUser.uid]: {
-            name: userProfile.displayName,
-            photo: userProfile.photoURL,
-          },
-          [ride.driverId]: {
-            name: ride.driverName,
-            photo: ride.driverPhoto,
-          },
-        },
-        rideId: ride.id,
-        createdAt: new Date().toISOString(),
-      };
-
-      await addDoc(collection(db, 'chats'), chatData);
+      await createOrGetChat(ride);
 
       toast.success('Ride booked successfully! Check your messages to contact the driver.');
       fetchRides();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error booking ride:', error);
-      toast.error('Failed to book ride');
+      
+      if (error.message === 'No available seats') {
+        toast.error('Sorry, this ride is now full');
+      } else if (error.message === 'Ride not found') {
+        toast.error('This ride is no longer available');
+      } else if (error.code === 'permission-denied') {
+        toast.error('Permission denied. Please check your Firestore rules.');
+      } else {
+        toast.error('Failed to book ride. Please try again.');
+      }
+    }
+  };
+
+  const createOrGetChat = async (ride: Ride) => {
+    if (!currentUser || !userProfile) return;
+
+    try {
+      const chatsQuery = query(
+        collection(db, 'chats'),
+        where('rideId', '==', ride.id),
+        where('participants', 'array-contains', currentUser.uid)
+      );
+      
+      const existingChats = await getDocs(chatsQuery);
+      
+      if (existingChats.empty) {
+        const chatData = {
+          participants: [currentUser.uid, ride.driverId],
+          participantDetails: {
+            [currentUser.uid]: {
+              name: userProfile.displayName || currentUser.email?.split('@')[0] || 'Anonymous',
+              photo: userProfile.photoURL || '',
+            },
+            [ride.driverId]: {
+              name: ride.driverName,
+              photo: ride.driverPhoto || '',
+            },
+          },
+          rideId: ride.id,
+          lastMessage: '',
+          lastMessageTime: Timestamp.now(),
+          createdAt: Timestamp.now(),
+        };
+
+        await addDoc(collection(db, 'chats'), chatData);
+      }
+    } catch (error) {
+      console.error('Error creating chat:', error);
     }
   };
 
@@ -135,7 +215,6 @@ export const FindRide: React.FC = () => {
       <div className="max-w-7xl mx-auto">
         <h1 className="text-3xl font-bold text-gray-900 mb-8">Find a Ride</h1>
 
-        {/* Search Form */}
         <div className="bg-white rounded-2xl shadow-xl p-6 mb-8">
           <form onSubmit={handleSearch} className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <input
@@ -168,7 +247,6 @@ export const FindRide: React.FC = () => {
           </form>
         </div>
 
-        {/* Results */}
         {loading ? (
           <div className="text-center py-12">
             <div className="inline-block h-12 w-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
