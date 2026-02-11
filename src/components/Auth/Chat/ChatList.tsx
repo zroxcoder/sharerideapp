@@ -1,11 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, onSnapshot, orderBy } from 'firebase/firestore';
+import { collection, query, where, getDocs, onSnapshot, orderBy, Timestamp } from 'firebase/firestore';
 import { db } from '../../../firebase/config';
 import { useAuth } from '../../../contexts/AuthContext';
 import { Chat } from '../../../types';
 import { ChatWindow } from './ChatWindow';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
+
+// Helper function to convert Date | Timestamp to Date
+const toDate = (value: Date | Timestamp | undefined): Date | undefined => {
+  if (!value) return undefined;
+  if (value instanceof Date) return value;
+  if (value instanceof Timestamp) return value.toDate();
+  return undefined;
+};
 
 export const ChatList: React.FC = () => {
   const { currentUser } = useAuth();
@@ -38,7 +46,9 @@ export const ChatList: React.FC = () => {
             if (!messagesSnapshot.empty) {
               const lastMsg = messagesSnapshot.docs[0].data();
               lastMessage = lastMsg.text;
-              lastMessageTime = lastMsg.timestamp?.toDate();
+              lastMessageTime = lastMsg.timestamp instanceof Timestamp 
+                ? lastMsg.timestamp.toDate() 
+                : new Date(lastMsg.timestamp);
             }
 
             chatsData.push({
@@ -46,14 +56,16 @@ export const ChatList: React.FC = () => {
               ...data,
               lastMessage,
               lastMessageTime,
-              createdAt: data.createdAt ? new Date(data.createdAt) : new Date(),
+              createdAt: data.createdAt instanceof Timestamp 
+                ? data.createdAt.toDate() 
+                : new Date(data.createdAt),
             } as Chat);
           }
 
           // Sort by last message time
           chatsData.sort((a, b) => {
-            const timeA = a.lastMessageTime?.getTime() || 0;
-            const timeB = b.lastMessageTime?.getTime() || 0;
+            const timeA = toDate(a.lastMessageTime)?.getTime() || 0;
+            const timeB = toDate(b.lastMessageTime)?.getTime() || 0;
             return timeB - timeA;
           });
 
@@ -101,6 +113,7 @@ export const ChatList: React.FC = () => {
               ) : (
                 chats.map((chat) => {
                   const otherUser = getOtherParticipant(chat);
+                  const lastMsgTime = toDate(chat.lastMessageTime);
                   return (
                     <button
                       key={chat.id}
@@ -121,9 +134,9 @@ export const ChatList: React.FC = () => {
                             {chat.lastMessage || 'No messages yet'}
                           </div>
                         </div>
-                        {chat.lastMessageTime && (
+                        {lastMsgTime && (
                           <div className="text-xs text-gray-500 flex-shrink-0">
-                            {format(chat.lastMessageTime, 'MMM dd')}
+                            {format(lastMsgTime, 'MMM dd')}
                           </div>
                         )}
                       </div>

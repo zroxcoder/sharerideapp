@@ -10,6 +10,13 @@ interface ChatWindowProps {
   chat: Chat;
 }
 
+// Helper function to convert Date | Timestamp to Date
+const toDate = (value: Date | Timestamp): Date => {
+  if (value instanceof Date) return value;
+  if (value instanceof Timestamp) return value.toDate();
+  return new Date();
+};
+
 export const ChatWindow: React.FC<ChatWindowProps> = ({ chat }) => {
   const { currentUser, userProfile } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -22,7 +29,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ chat }) => {
   };
 
   useEffect(() => {
-    if (!chat) return;
+    if (!chat || !chat.id) return; // ✅ Check if chat.id exists
 
     const messagesRef = collection(db, 'chats', chat.id, 'messages');
     const q = query(messagesRef, orderBy('timestamp', 'asc'));
@@ -33,8 +40,15 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ chat }) => {
         const data = doc.data();
         messagesData.push({
           id: doc.id,
-          ...data,
-          timestamp: data.timestamp instanceof Timestamp ? data.timestamp.toDate() : new Date(data.timestamp),
+          chatId: data.chatId,
+          senderId: data.senderId,
+          senderName: data.senderName,
+          senderPhoto: data.senderPhoto,
+          text: data.text,
+          timestamp: data.timestamp instanceof Timestamp 
+            ? data.timestamp.toDate() 
+            : new Date(data.timestamp),
+          read: data.read,
         } as Message);
       });
       setMessages(messagesData);
@@ -51,7 +65,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ chat }) => {
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!newMessage.trim() || !currentUser || !userProfile) return;
+    if (!newMessage.trim() || !currentUser || !userProfile || !chat.id) return; // ✅ Check if chat.id exists
 
     setSending(true);
     try {
@@ -61,14 +75,11 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ chat }) => {
         senderName: userProfile.displayName,
         senderPhoto: userProfile.photoURL,
         text: newMessage.trim(),
-        timestamp: new Date(),
+        timestamp: Timestamp.now(),
         read: false,
       };
 
-      await addDoc(collection(db, 'chats', chat.id, 'messages'), {
-        ...messageData,
-        timestamp: Timestamp.now(),
-      });
+      await addDoc(collection(db, 'chats', chat.id, 'messages'), messageData);
 
       setNewMessage('');
     } catch (error) {
@@ -104,6 +115,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ chat }) => {
         ) : (
           messages.map((message) => {
             const isOwn = message.senderId === currentUser?.uid;
+            const msgTime = toDate(message.timestamp);
             return (
               <div key={message.id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
                 <div className={`max-w-xs lg:max-w-md ${isOwn ? 'order-2' : 'order-1'}`}>
@@ -117,7 +129,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ chat }) => {
                     <p className="break-words">{message.text}</p>
                   </div>
                   <div className={`text-xs text-gray-500 mt-1 ${isOwn ? 'text-right' : 'text-left'}`}>
-                    {format(message.timestamp, 'HH:mm')}
+                    {format(msgTime, 'HH:mm')}
                   </div>
                 </div>
               </div>
