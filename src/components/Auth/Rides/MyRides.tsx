@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, Timestamp } from 'firebase/firestore';
+import { collection, query, where, getDocs, deleteDoc, doc, Timestamp } from 'firebase/firestore';
 import { db } from '../../../firebase/config';
 import { useAuth } from '../../../contexts/AuthContext';
 import { Ride, Booking } from '../../../types';
@@ -12,6 +12,7 @@ export const MyRides: React.FC = () => {
   const [postedRides, setPostedRides] = useState<Ride[]>([]);
   const [bookedRides, setBookedRides] = useState<Ride[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
   useEffect(() => {
     if (currentUser) {
@@ -70,12 +71,49 @@ export const MyRides: React.FC = () => {
           }
         });
         setBookedRides(booked);
+      } else {
+        setBookedRides([]);
       }
     } catch (error) {
       console.error('Error fetching rides:', error);
       toast.error('Failed to load rides');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // ✅ NEW: Delete ride functionality
+  const handleDeleteRide = async (rideId: string) => {
+    if (!currentUser) return;
+
+    const loadingToast = toast.loading('Deleting ride...');
+
+    try {
+      // Delete all bookings for this ride
+      const bookingsQuery = query(
+        collection(db, 'bookings'),
+        where('rideId', '==', rideId)
+      );
+      const bookingsSnapshot = await getDocs(bookingsQuery);
+      
+      const deletePromises = bookingsSnapshot.docs.map(bookingDoc => 
+        deleteDoc(doc(db, 'bookings', bookingDoc.id))
+      );
+      await Promise.all(deletePromises);
+
+      // Delete the ride
+      await deleteDoc(doc(db, 'rides', rideId));
+
+      toast.dismiss(loadingToast);
+      toast.success('Ride deleted successfully');
+      
+      // Refresh rides
+      fetchRides();
+      setDeleteConfirm(null);
+    } catch (error) {
+      console.error('Error deleting ride:', error);
+      toast.dismiss(loadingToast);
+      toast.error('Failed to delete ride');
     }
   };
 
@@ -133,12 +171,50 @@ export const MyRides: React.FC = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {currentRides.map((ride) => (
-              <RideCard
-                key={ride.id}
-                ride={ride}
-                isOwner={activeTab === 'posted'}
-                showBookButton={false}
-              />
+              <div key={ride.id} className="relative">
+                <RideCard
+                  ride={ride}
+                  isOwner={activeTab === 'posted'}
+                  showBookButton={false}
+                />
+                
+                {/* ✅ Delete Button for Posted Rides */}
+                {activeTab === 'posted' && (
+                  <div className="mt-4">
+                    {deleteConfirm === ride.id ? (
+                      <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                        <p className="text-sm text-red-800 mb-3">
+                          Are you sure? This will delete the ride and all bookings.
+                        </p>
+                        <div className="flex space-x-2">
+                          <button
+                            onClick={() => handleDeleteRide(ride.id)}
+                            className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition"
+                          >
+                            Yes, Delete
+                          </button>
+                          <button
+                            onClick={() => setDeleteConfirm(null)}
+                            className="flex-1 px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setDeleteConfirm(ride.id)}
+                        className="w-full px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition flex items-center justify-center space-x-2"
+                      >
+                        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                        <span>Delete Ride</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         )}

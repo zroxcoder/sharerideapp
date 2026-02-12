@@ -15,7 +15,6 @@ import { Ride, Booking } from '../../../types';
 import { RideCard } from './RideCard';
 import toast from 'react-hot-toast';
 
-// Helper to convert Timestamp to Date
 const toDate = (dateOrTimestamp: Date | Timestamp): Date => {
   if (dateOrTimestamp instanceof Timestamp) {
     return dateOrTimestamp.toDate();
@@ -109,7 +108,10 @@ export const FindRide: React.FC = () => {
       return;
     }
 
+    const loadingToast = toast.loading('Booking ride...');
+
     try {
+      // ✅ Check for existing bookings
       const existingBookingsQuery = query(
         collection(db, 'bookings'),
         where('rideId', '==', ride.id),
@@ -118,10 +120,12 @@ export const FindRide: React.FC = () => {
       const existingBookings = await getDocs(existingBookingsQuery);
 
       if (!existingBookings.empty) {
+        toast.dismiss(loadingToast);
         toast.error('You have already booked this ride');
         return;
       }
 
+      // ✅ Book the ride in a transaction
       await runTransaction(db, async (transaction) => {
         const rideRef = doc(db, 'rides', ride.id);
         const rideDoc = await transaction.get(rideRef);
@@ -143,22 +147,26 @@ export const FindRide: React.FC = () => {
           riderPhoto: userProfile.photoURL || '',
           seatsBooked: 1,
           totalPrice: ride.pricePerSeat,
-          status: 'pending',
-          createdAt: Timestamp.now(), // ✅ Now works!
+          status: 'confirmed',
+          createdAt: Timestamp.now(),
         };
 
         transaction.set(bookingRef, bookingData);
         transaction.update(rideRef, {
-          availableSeats: currentSeats - 1
+          availableSeats: currentSeats - 1,
+          passengers: [...(rideDoc.data().passengers || []), currentUser.uid]
         });
       });
 
+      // ✅ Create chat AFTER successful booking
       await createOrGetChat(ride);
 
-      toast.success('Ride booked successfully! Check your messages to contact the driver.');
+      toast.dismiss(loadingToast);
+      toast.success('✅ Ride booked! Check Messages to contact the driver.');
       fetchRides();
     } catch (error: any) {
       console.error('Error booking ride:', error);
+      toast.dismiss(loadingToast);
       
       if (error.message === 'No available seats') {
         toast.error('Sorry, this ride is now full');
@@ -172,41 +180,52 @@ export const FindRide: React.FC = () => {
     }
   };
 
+  // ✅ FIXED: Proper chat creation
   const createOrGetChat = async (ride: Ride) => {
-    if (!currentUser || !userProfile) return;
+    if (!currentUser || !userProfile) {
+      console.error('No current user or profile');
+      return;
+    }
 
     try {
-      const chatsQuery = query(
-        collection(db, 'chats'),
+      // ✅ Check if chat already exists
+      const chatsRef = collection(db, 'chats');
+      const q = query(
+        chatsRef,
         where('rideId', '==', ride.id),
         where('participants', 'array-contains', currentUser.uid)
       );
       
-      const existingChats = await getDocs(chatsQuery);
+      const existingChats = await getDocs(q);
       
       if (existingChats.empty) {
+        // ✅ Create new chat with proper structure
         const chatData = {
-          participants: [currentUser.uid, ride.driverId],
+          participants: [currentUser.uid, ride.driverId], // ✅ Always array with both users
           participantDetails: {
             [currentUser.uid]: {
               name: userProfile.displayName || currentUser.email?.split('@')[0] || 'Anonymous',
               photo: userProfile.photoURL || '',
             },
             [ride.driverId]: {
-              name: ride.driverName,
+              name: ride.driverName || 'Driver',
               photo: ride.driverPhoto || '',
             },
           },
           rideId: ride.id,
-          lastMessage: '',
+          lastMessage: 'Ride booked',
           lastMessageTime: Timestamp.now(),
           createdAt: Timestamp.now(),
         };
 
-        await addDoc(collection(db, 'chats'), chatData);
+        await addDoc(chatsRef, chatData);
+        console.log('✅ Chat created successfully');
+      } else {
+        console.log('✅ Chat already exists');
       }
     } catch (error) {
       console.error('Error creating chat:', error);
+      // Don't show error to user - chat creation is secondary
     }
   };
 

@@ -7,7 +7,6 @@ import { ChatWindow } from './ChatWindow';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 
-// Helper function to convert Date | Timestamp to Date
 const toDate = (value: Date | Timestamp | undefined): Date | undefined => {
   if (!value) return undefined;
   if (value instanceof Date) return value;
@@ -22,21 +21,40 @@ export const ChatList: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser) {
+      setLoading(false);
+      return;
+    }
 
     const fetchChats = async () => {
       try {
         const chatsRef = collection(db, 'chats');
-        const q = query(chatsRef, where('participants', 'array-contains', currentUser.uid));
+        
+        // ✅ FIXED: Only get chats where current user is a participant
+        const q = query(
+          chatsRef, 
+          where('participants', 'array-contains', currentUser.uid)
+        );
 
         const unsubscribe = onSnapshot(q, async (snapshot) => {
           const chatsData: Chat[] = [];
           
-          for (const doc of snapshot.docs) {
-            const data = doc.data();
+          for (const chatDoc of snapshot.docs) {
+            const data = chatDoc.data();
             
+            // ✅ CRITICAL: Verify current user is actually in participants
+            if (!data.participants || !Array.isArray(data.participants)) {
+              console.warn('Invalid participants array in chat:', chatDoc.id);
+              continue;
+            }
+
+            if (!data.participants.includes(currentUser.uid)) {
+              console.warn('User not in participants, skipping chat:', chatDoc.id);
+              continue;
+            }
+
             // Get last message
-            const messagesRef = collection(db, 'chats', doc.id, 'messages');
+            const messagesRef = collection(db, 'chats', chatDoc.id, 'messages');
             const messagesQuery = query(messagesRef, orderBy('timestamp', 'desc'));
             const messagesSnapshot = await getDocs(messagesQuery);
             
@@ -45,15 +63,17 @@ export const ChatList: React.FC = () => {
             
             if (!messagesSnapshot.empty) {
               const lastMsg = messagesSnapshot.docs[0].data();
-              lastMessage = lastMsg.text;
+              lastMessage = lastMsg.text || '';
               lastMessageTime = lastMsg.timestamp instanceof Timestamp 
                 ? lastMsg.timestamp.toDate() 
                 : new Date(lastMsg.timestamp);
             }
 
             chatsData.push({
-              id: doc.id,
-              ...data,
+              id: chatDoc.id,
+              participants: data.participants,
+              participantDetails: data.participantDetails || {},
+              rideId: data.rideId,
               lastMessage,
               lastMessageTime,
               createdAt: data.createdAt instanceof Timestamp 
@@ -69,7 +89,12 @@ export const ChatList: React.FC = () => {
             return timeB - timeA;
           });
 
+          console.log('✅ Loaded chats:', chatsData.length);
           setChats(chatsData);
+          setLoading(false);
+        }, (error) => {
+          console.error('Error in chat listener:', error);
+          toast.error('Failed to load chats');
           setLoading(false);
         });
 
@@ -85,8 +110,9 @@ export const ChatList: React.FC = () => {
   }, [currentUser]);
 
   const getOtherParticipant = (chat: Chat) => {
-    const otherUserId = chat.participants.find(id => id !== currentUser?.uid);
-    return otherUserId ? chat.participantDetails[otherUserId] : null;
+    if (!currentUser) return null;
+    const otherUserId = chat.participants?.find(id => id !== currentUser.uid);
+    return otherUserId ? chat.participantDetails?.[otherUserId] : null;
   };
 
   return (
@@ -114,6 +140,7 @@ export const ChatList: React.FC = () => {
                 chats.map((chat) => {
                   const otherUser = getOtherParticipant(chat);
                   const lastMsgTime = toDate(chat.lastMessageTime);
+                  
                   return (
                     <button
                       key={chat.id}
@@ -124,7 +151,7 @@ export const ChatList: React.FC = () => {
                     >
                       <div className="flex items-center space-x-3">
                         <div className="h-12 w-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold flex-shrink-0">
-                          {otherUser?.name.charAt(0) || 'U'}
+                          {otherUser?.name?.charAt(0)?.toUpperCase() || 'U'}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="font-semibold text-gray-900 truncate">
