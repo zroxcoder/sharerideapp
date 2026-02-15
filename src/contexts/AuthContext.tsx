@@ -9,17 +9,18 @@ import {
   setPersistence,
   browserLocalPersistence
 } from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
-import { auth, db } from '@/firebase/config'; // ✅ FIXED PATH
+import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
+import { auth, db } from '@/firebase/config';
 import { User } from '@/types';
 
 interface AuthContextType {
   currentUser: FirebaseUser | null;
-  userData: User | null;
+  userProfile: User | null; // ✅ Changed from userData to userProfile
   loading: boolean;
   signup: (email: string, password: string, displayName: string, userType: 'driver' | 'rider' | 'both') => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  updateUserProfile: (updates: Partial<User>) => Promise<void>; // ✅ Added missing function
 }
 
 const AuthContext = createContext<AuthContextType>({} as AuthContextType);
@@ -34,7 +35,7 @@ export const useAuth = () => {
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<FirebaseUser | null>(null);
-  const [userData, setUserData] = useState<User | null>(null);
+  const [userProfile, setUserProfile] = useState<User | null>(null); // ✅ Changed from userData to userProfile
   const [loading, setLoading] = useState(true);
 
   // Fetch user data from Firestore
@@ -42,10 +43,28 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       const userDoc = await getDoc(doc(db, 'users', uid));
       if (userDoc.exists()) {
-        setUserData(userDoc.data() as User);
+        setUserProfile(userDoc.data() as User); // ✅ Changed from setUserData to setUserProfile
       }
     } catch (error) {
       console.error('Error fetching user data:', error);
+    }
+  };
+
+  // ✅ NEW: Update user profile function
+  const updateUserProfile = async (updates: Partial<User>) => {
+    if (!currentUser) {
+      throw new Error('No user logged in');
+    }
+
+    try {
+      const userRef = doc(db, 'users', currentUser.uid);
+      await updateDoc(userRef, updates);
+      
+      // Update local state
+      setUserProfile(prev => prev ? { ...prev, ...updates } : null);
+    } catch (error) {
+      console.error('Error updating user profile:', error);
+      throw new Error('Failed to update profile');
     }
   };
 
@@ -77,7 +96,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       };
 
       await setDoc(doc(db, 'users', user.uid), newUser);
-      setUserData(newUser);
+      setUserProfile(newUser); // ✅ Changed from setUserData to setUserProfile
     } catch (error: any) {
       console.error('Signup error:', error);
       throw new Error(error.message || 'Failed to create account');
@@ -105,6 +124,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         errorMessage = 'Invalid email address';
       } else if (error.code === 'auth/too-many-requests') {
         errorMessage = 'Too many attempts. Please try again later';
+      } else if (error.code === 'auth/invalid-credential') {
+        errorMessage = 'Invalid email or password';
       }
       
       throw new Error(errorMessage);
@@ -115,7 +136,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const logout = async () => {
     try {
       await signOut(auth);
-      setUserData(null);
+      setUserProfile(null); // ✅ Changed from setUserData to setUserProfile
       setCurrentUser(null);
     } catch (error: any) {
       console.error('Logout error:', error);
@@ -135,7 +156,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         await fetchUserData(user.uid);
       } else {
         setCurrentUser(null);
-        setUserData(null);
+        setUserProfile(null); // ✅ Changed from setUserData to setUserProfile
       }
       
       setLoading(false);
@@ -150,11 +171,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const value = {
     currentUser,
-    userData,
+    userProfile, // ✅ Changed from userData to userProfile
     loading,
     signup,
     login,
     logout,
+    updateUserProfile, // ✅ Added missing function
   };
 
   return (
