@@ -7,11 +7,11 @@ import {
   addDoc, 
   Timestamp, 
   doc, 
-  runTransaction 
+  runTransaction
 } from 'firebase/firestore';
 import { db } from '../../../firebase/config';
 import { useAuth } from '../../../contexts/AuthContext';
-import { Ride, Booking } from '../../../types';
+import { Ride } from '../../../types';
 import { RideCard } from './RideCard';
 import toast from 'react-hot-toast';
 
@@ -125,6 +125,15 @@ export const FindRide: React.FC = () => {
         return;
       }
 
+      // ✅ Create chat FIRST, then book the ride
+      const chatId = await createOrGetChat(ride);
+
+      if (!chatId) {
+        toast.dismiss(loadingToast);
+        toast.error('Failed to create chat. Please try again.');
+        return;
+      }
+
       // ✅ Book the ride in a transaction
       await runTransaction(db, async (transaction) => {
         const rideRef = doc(db, 'rides', ride.id);
@@ -140,7 +149,7 @@ export const FindRide: React.FC = () => {
         }
 
         const bookingRef = doc(collection(db, 'bookings'));
-        const bookingData: Booking = {
+        const bookingData = {
           rideId: ride.id,
           riderId: currentUser.uid,
           riderName: userProfile.displayName || currentUser.email?.split('@')[0] || 'Anonymous',
@@ -149,6 +158,7 @@ export const FindRide: React.FC = () => {
           totalPrice: ride.pricePerSeat,
           status: 'confirmed',
           createdAt: Timestamp.now(),
+          chatId: chatId, // ✅ Link to chat
         };
 
         transaction.set(bookingRef, bookingData);
@@ -157,9 +167,6 @@ export const FindRide: React.FC = () => {
           passengers: [...(rideDoc.data().passengers || []), currentUser.uid]
         });
       });
-
-      // ✅ Create chat AFTER successful booking
-      await createOrGetChat(ride);
 
       toast.dismiss(loadingToast);
       toast.success('✅ Ride booked! Check Messages to contact the driver.');
@@ -180,15 +187,15 @@ export const FindRide: React.FC = () => {
     }
   };
 
-  // ✅ FIXED: Proper chat creation
-  const createOrGetChat = async (ride: Ride) => {
+  // ✅ Return chat ID and ensure both users can access it
+  const createOrGetChat = async (ride: Ride): Promise<string | null> => {
     if (!currentUser || !userProfile) {
       console.error('No current user or profile');
-      return;
+      return null;
     }
 
     try {
-      // ✅ Check if chat already exists
+      // ✅ Check if chat already exists for this ride
       const chatsRef = collection(db, 'chats');
       const q = query(
         chatsRef,
@@ -198,34 +205,37 @@ export const FindRide: React.FC = () => {
       
       const existingChats = await getDocs(q);
       
-      if (existingChats.empty) {
-        // ✅ Create new chat with proper structure
-        const chatData = {
-          participants: [currentUser.uid, ride.driverId], // ✅ Always array with both users
-          participantDetails: {
-            [currentUser.uid]: {
-              name: userProfile.displayName || currentUser.email?.split('@')[0] || 'Anonymous',
-              photo: userProfile.photoURL || '',
-            },
-            [ride.driverId]: {
-              name: ride.driverName || 'Driver',
-              photo: ride.driverPhoto || '',
-            },
-          },
-          rideId: ride.id,
-          lastMessage: 'Ride booked',
-          lastMessageTime: Timestamp.now(),
-          createdAt: Timestamp.now(),
-        };
-
-        await addDoc(chatsRef, chatData);
-        console.log('✅ Chat created successfully');
-      } else {
-        console.log('✅ Chat already exists');
+      if (!existingChats.empty) {
+        console.log('✅ Chat already exists:', existingChats.docs[0].id);
+        return existingChats.docs[0].id;
       }
+
+      // ✅ Create new chat with proper structure
+      const participants = [currentUser.uid, ride.driverId];
+      const chatData = {
+        participants: participants,
+        participantDetails: {
+          [currentUser.uid]: {
+            name: userProfile.displayName || currentUser.email?.split('@')[0] || 'Anonymous',
+            photo: userProfile.photoURL || '',
+          },
+          [ride.driverId]: {
+            name: ride.driverName || 'Driver',
+            photo: ride.driverPhoto || '',
+          },
+        },
+        rideId: ride.id,
+        lastMessage: 'Ride booked - Start chatting!',
+        lastMessageTime: Timestamp.now(),
+        createdAt: Timestamp.now(),
+      };
+
+      const chatDocRef = await addDoc(chatsRef, chatData);
+      console.log('✅ Chat created successfully:', chatDocRef.id);
+      return chatDocRef.id;
     } catch (error) {
       console.error('Error creating chat:', error);
-      // Don't show error to user - chat creation is secondary
+      return null;
     }
   };
 

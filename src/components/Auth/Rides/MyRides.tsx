@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, deleteDoc, doc, Timestamp } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, deleteDoc, doc, Timestamp, getDocs } from 'firebase/firestore';
 import { db } from '../../../firebase/config';
 import { useAuth } from '../../../contexts/AuthContext';
 import { Ride, Booking } from '../../../types';
@@ -14,25 +14,18 @@ export const MyRides: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
+  // ✅ FIX: Real-time listener for posted rides
   useEffect(() => {
-    if (currentUser) {
-      fetchRides();
-    }
-  }, [currentUser]);
-
-  const fetchRides = async () => {
     if (!currentUser) return;
 
-    setLoading(true);
-    try {
-      // Fetch posted rides
-      const postedQuery = query(
-        collection(db, 'rides'),
-        where('driverId', '==', currentUser.uid)
-      );
-      const postedSnapshot = await getDocs(postedQuery);
+    const ridesQuery = query(
+      collection(db, 'rides'),
+      where('driverId', '==', currentUser.uid)
+    );
+
+    const unsubscribe = onSnapshot(ridesQuery, (snapshot) => {
       const posted: Ride[] = [];
-      postedSnapshot.forEach((doc) => {
+      snapshot.forEach((doc) => {
         const data = doc.data();
         posted.push({
           id: doc.id,
@@ -42,23 +35,38 @@ export const MyRides: React.FC = () => {
         } as Ride);
       });
       setPostedRides(posted);
+      setLoading(false);
+    }, (error) => {
+      console.error('Error fetching posted rides:', error);
+      toast.error('Failed to load posted rides');
+      setLoading(false);
+    });
 
-      // Fetch booked rides
-      const bookingsQuery = query(
-        collection(db, 'bookings'),
-        where('riderId', '==', currentUser.uid)
-      );
-      const bookingsSnapshot = await getDocs(bookingsQuery);
+    return () => unsubscribe();
+  }, [currentUser]);
+
+  // ✅ FIX: Real-time listener for booked rides
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const bookingsQuery = query(
+      collection(db, 'bookings'),
+      where('riderId', '==', currentUser.uid)
+    );
+
+    const unsubscribe = onSnapshot(bookingsQuery, async (snapshot) => {
       const rideIds: string[] = [];
-      bookingsSnapshot.forEach((doc) => {
+      snapshot.forEach((doc) => {
         const booking = doc.data() as Booking;
         rideIds.push(booking.rideId);
       });
 
       if (rideIds.length > 0) {
-        const ridesQuery = collection(db, 'rides');
-        const ridesSnapshot = await getDocs(ridesQuery);
+        // Fetch all rides for these booking IDs
+        const ridesRef = collection(db, 'rides');
+        const ridesSnapshot = await getDocs(ridesRef);
         const booked: Ride[] = [];
+        
         ridesSnapshot.forEach((doc) => {
           if (rideIds.includes(doc.id)) {
             const data = doc.data();
@@ -74,15 +82,14 @@ export const MyRides: React.FC = () => {
       } else {
         setBookedRides([]);
       }
-    } catch (error) {
-      console.error('Error fetching rides:', error);
-      toast.error('Failed to load rides');
-    } finally {
-      setLoading(false);
-    }
-  };
+    }, (error) => {
+      console.error('Error fetching bookings:', error);
+      toast.error('Failed to load booked rides');
+    });
 
-  // ✅ NEW: Delete ride functionality
+    return () => unsubscribe();
+  }, [currentUser]);
+
   const handleDeleteRide = async (rideId: string) => {
     if (!currentUser) return;
 
@@ -101,14 +108,22 @@ export const MyRides: React.FC = () => {
       );
       await Promise.all(deletePromises);
 
+      // Delete associated chats
+      const chatsQuery = query(
+        collection(db, 'chats'),
+        where('rideId', '==', rideId)
+      );
+      const chatsSnapshot = await getDocs(chatsQuery);
+      const chatDeletePromises = chatsSnapshot.docs.map(chatDoc =>
+        deleteDoc(doc(db, 'chats', chatDoc.id))
+      );
+      await Promise.all(chatDeletePromises);
+
       // Delete the ride
       await deleteDoc(doc(db, 'rides', rideId));
 
       toast.dismiss(loadingToast);
       toast.success('Ride deleted successfully');
-      
-      // Refresh rides
-      fetchRides();
       setDeleteConfirm(null);
     } catch (error) {
       console.error('Error deleting ride:', error);
@@ -178,7 +193,6 @@ export const MyRides: React.FC = () => {
                   showBookButton={false}
                 />
                 
-                {/* ✅ Delete Button for Posted Rides */}
                 {activeTab === 'posted' && (
                   <div className="mt-4">
                     {deleteConfirm === ride.id ? (

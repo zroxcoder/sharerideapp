@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { collection, addDoc, query, orderBy, onSnapshot, Timestamp } from 'firebase/firestore';
+import { collection, addDoc, query, orderBy, onSnapshot, Timestamp, updateDoc, doc } from 'firebase/firestore';
 import { db } from '../../../firebase/config';
 import { useAuth } from '../../../contexts/AuthContext';
 import { Chat, Message } from '../../../types';
@@ -10,7 +10,6 @@ interface ChatWindowProps {
   chat: Chat;
 }
 
-// Helper function to convert Date | Timestamp to Date
 const toDate = (value: Date | Timestamp): Date => {
   if (value instanceof Date) return value;
   if (value instanceof Timestamp) return value.toDate();
@@ -29,7 +28,10 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ chat }) => {
   };
 
   useEffect(() => {
-    if (!chat || !chat.id) return; // ✅ Check if chat.id exists
+    if (!chat?.id) {
+      console.error('Chat ID is missing');
+      return;
+    }
 
     const messagesRef = collection(db, 'chats', chat.id, 'messages');
     const q = query(messagesRef, orderBy('timestamp', 'asc'));
@@ -40,7 +42,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ chat }) => {
         const data = doc.data();
         messagesData.push({
           id: doc.id,
-          chatId: data.chatId,
+          chatId: chat.id!,
           senderId: data.senderId,
           senderName: data.senderName,
           senderPhoto: data.senderPhoto,
@@ -52,11 +54,14 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ chat }) => {
         } as Message);
       });
       setMessages(messagesData);
-      scrollToBottom();
+      setTimeout(scrollToBottom, 100);
+    }, (error) => {
+      console.error('Error loading messages:', error);
+      toast.error('Failed to load messages');
     });
 
     return () => unsubscribe();
-  }, [chat]);
+  }, [chat?.id]);
 
   useEffect(() => {
     scrollToBottom();
@@ -65,40 +70,69 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ chat }) => {
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!newMessage.trim() || !currentUser || !userProfile || !chat.id) return; // ✅ Check if chat.id exists
+    if (!newMessage.trim() || !currentUser || !userProfile || !chat?.id) {
+      if (!chat?.id) {
+        toast.error('Chat session error. Please refresh the page.');
+      }
+      return;
+    }
 
+    const messageText = newMessage.trim();
+    setNewMessage(''); // Clear immediately for better UX
     setSending(true);
+
     try {
       const messageData = {
         chatId: chat.id,
         senderId: currentUser.uid,
-        senderName: userProfile.displayName,
-        senderPhoto: userProfile.photoURL,
-        text: newMessage.trim(),
+        senderName: userProfile.displayName || currentUser.email?.split('@')[0] || 'Anonymous',
+        senderPhoto: userProfile.photoURL || '',
+        text: messageText,
         timestamp: Timestamp.now(),
         read: false,
       };
 
+      // Add message to subcollection
       await addDoc(collection(db, 'chats', chat.id, 'messages'), messageData);
 
-      setNewMessage('');
+      // ✅ FIX: Update chat document with last message
+      try {
+        const chatRef = doc(db, 'chats', chat.id);
+        await updateDoc(chatRef, {
+          lastMessage: messageText,
+          lastMessageTime: Timestamp.now(),
+        });
+      } catch (updateError) {
+        console.error('Error updating chat document:', updateError);
+        // Don't throw - message was sent successfully
+      }
+
     } catch (error) {
       console.error('Error sending message:', error);
       toast.error('Failed to send message');
+      setNewMessage(messageText); // Restore message on error
     } finally {
       setSending(false);
     }
   };
 
-  const otherUser = chat.participants.find(id => id !== currentUser?.uid);
-  const otherUserDetails = otherUser ? chat.participantDetails[otherUser] : null;
+  if (!chat?.id) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <p className="text-red-600">Error: Chat session invalid. Please refresh.</p>
+      </div>
+    );
+  }
+
+  const otherUser = chat.participants?.find(id => id !== currentUser?.uid);
+  const otherUserDetails = otherUser ? chat.participantDetails?.[otherUser] : null;
 
   return (
     <div className="flex flex-col h-full">
       {/* Chat Header */}
       <div className="bg-gradient-to-r from-blue-500 to-purple-600 p-4 flex items-center space-x-3">
         <div className="h-10 w-10 rounded-full bg-white flex items-center justify-center text-blue-600 font-bold">
-          {otherUserDetails?.name.charAt(0) || 'U'}
+          {otherUserDetails?.name?.charAt(0)?.toUpperCase() || 'U'}
         </div>
         <div>
           <div className="font-semibold text-white">{otherUserDetails?.name || 'User'}</div>
@@ -155,7 +189,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({ chat }) => {
             disabled={sending || !newMessage.trim()}
             className="px-6 py-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white font-semibold rounded-full hover:shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Send
+            {sending ? 'Sending...' : 'Send'}
           </button>
         </div>
       </form>

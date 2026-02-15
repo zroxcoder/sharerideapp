@@ -26,87 +26,79 @@ export const ChatList: React.FC = () => {
       return;
     }
 
-    const fetchChats = async () => {
-      try {
-        const chatsRef = collection(db, 'chats');
+    const chatsRef = collection(db, 'chats');
+    const q = query(
+      chatsRef, 
+      where('participants', 'array-contains', currentUser.uid)
+    );
+
+    const unsubscribe = onSnapshot(q, async (snapshot) => {
+      const chatsData: Chat[] = [];
+      
+      for (const chatDoc of snapshot.docs) {
+        const data = chatDoc.data();
         
-        // ✅ FIXED: Only get chats where current user is a participant
-        const q = query(
-          chatsRef, 
-          where('participants', 'array-contains', currentUser.uid)
-        );
+        // ✅ CRITICAL: Verify current user is actually in participants
+        if (!data.participants || !Array.isArray(data.participants)) {
+          console.warn('Invalid participants array in chat:', chatDoc.id);
+          continue;
+        }
 
-        const unsubscribe = onSnapshot(q, async (snapshot) => {
-          const chatsData: Chat[] = [];
-          
-          for (const chatDoc of snapshot.docs) {
-            const data = chatDoc.data();
-            
-            // ✅ CRITICAL: Verify current user is actually in participants
-            if (!data.participants || !Array.isArray(data.participants)) {
-              console.warn('Invalid participants array in chat:', chatDoc.id);
-              continue;
-            }
+        if (!data.participants.includes(currentUser.uid)) {
+          console.warn('User not in participants, skipping chat:', chatDoc.id);
+          continue;
+        }
 
-            if (!data.participants.includes(currentUser.uid)) {
-              console.warn('User not in participants, skipping chat:', chatDoc.id);
-              continue;
-            }
+        // Get last message
+        const messagesRef = collection(db, 'chats', chatDoc.id, 'messages');
+        const messagesQuery = query(messagesRef, orderBy('timestamp', 'desc'));
+        const messagesSnapshot = await getDocs(messagesQuery);
+        
+        let lastMessage = data.lastMessage || '';
+        let lastMessageTime: Date | undefined;
+        
+        if (!messagesSnapshot.empty) {
+          const lastMsg = messagesSnapshot.docs[0].data();
+          lastMessage = lastMsg.text || '';
+          lastMessageTime = lastMsg.timestamp instanceof Timestamp 
+            ? lastMsg.timestamp.toDate() 
+            : new Date(lastMsg.timestamp);
+        } else if (data.lastMessageTime) {
+          lastMessageTime = data.lastMessageTime instanceof Timestamp 
+            ? data.lastMessageTime.toDate() 
+            : new Date(data.lastMessageTime);
+        }
 
-            // Get last message
-            const messagesRef = collection(db, 'chats', chatDoc.id, 'messages');
-            const messagesQuery = query(messagesRef, orderBy('timestamp', 'desc'));
-            const messagesSnapshot = await getDocs(messagesQuery);
-            
-            let lastMessage = '';
-            let lastMessageTime: Date | undefined;
-            
-            if (!messagesSnapshot.empty) {
-              const lastMsg = messagesSnapshot.docs[0].data();
-              lastMessage = lastMsg.text || '';
-              lastMessageTime = lastMsg.timestamp instanceof Timestamp 
-                ? lastMsg.timestamp.toDate() 
-                : new Date(lastMsg.timestamp);
-            }
-
-            chatsData.push({
-              id: chatDoc.id,
-              participants: data.participants,
-              participantDetails: data.participantDetails || {},
-              rideId: data.rideId,
-              lastMessage,
-              lastMessageTime,
-              createdAt: data.createdAt instanceof Timestamp 
-                ? data.createdAt.toDate() 
-                : new Date(data.createdAt),
-            } as Chat);
-          }
-
-          // Sort by last message time
-          chatsData.sort((a, b) => {
-            const timeA = toDate(a.lastMessageTime)?.getTime() || 0;
-            const timeB = toDate(b.lastMessageTime)?.getTime() || 0;
-            return timeB - timeA;
-          });
-
-          console.log('✅ Loaded chats:', chatsData.length);
-          setChats(chatsData);
-          setLoading(false);
-        }, (error) => {
-          console.error('Error in chat listener:', error);
-          toast.error('Failed to load chats');
-          setLoading(false);
-        });
-
-        return () => unsubscribe();
-      } catch (error) {
-        console.error('Error fetching chats:', error);
-        toast.error('Failed to load chats');
-        setLoading(false);
+        chatsData.push({
+          id: chatDoc.id, // ✅ FIX: Always set the ID from document
+          participants: data.participants,
+          participantDetails: data.participantDetails || {},
+          rideId: data.rideId,
+          lastMessage,
+          lastMessageTime,
+          createdAt: data.createdAt instanceof Timestamp 
+            ? data.createdAt.toDate() 
+            : new Date(data.createdAt),
+        } as Chat);
       }
-    };
 
-    fetchChats();
+      // Sort by last message time
+      chatsData.sort((a, b) => {
+        const timeA = toDate(a.lastMessageTime)?.getTime() || 0;
+        const timeB = toDate(b.lastMessageTime)?.getTime() || 0;
+        return timeB - timeA;
+      });
+
+      console.log('✅ Loaded chats:', chatsData.length);
+      setChats(chatsData);
+      setLoading(false);
+    }, (error) => {
+      console.error('Error in chat listener:', error);
+      toast.error('Failed to load chats');
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
   }, [currentUser]);
 
   const getOtherParticipant = (chat: Chat) => {
@@ -175,7 +167,7 @@ export const ChatList: React.FC = () => {
 
             {/* Chat Window */}
             <div className="lg:col-span-2">
-              {selectedChat ? (
+              {selectedChat && selectedChat.id ? (
                 <ChatWindow chat={selectedChat} />
               ) : (
                 <div className="flex flex-col items-center justify-center h-full p-8 text-center">
