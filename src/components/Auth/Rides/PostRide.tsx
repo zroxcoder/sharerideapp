@@ -23,13 +23,11 @@ export const PostRide: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validate authentication
     if (!currentUser) {
       toast.error('Please login first');
       return;
     }
 
-    // Validate required fields
     if (!formData.from || !formData.to || !formData.date || !formData.time) {
       toast.error('Please fill in all required fields');
       return;
@@ -38,15 +36,11 @@ export const PostRide: React.FC = () => {
     setIsLoading(true);
     
     try {
-      // Prepare ride data with proper fallbacks
       const rideData = {
-        // Driver information
         driverId: currentUser.uid,
         driverName: userProfile?.displayName || currentUser.displayName || currentUser.email?.split('@')[0] || 'Anonymous',
         driverPhoto: userProfile?.photoURL || currentUser.photoURL || '',
         driverRating: typeof userProfile?.rating === 'number' ? userProfile.rating : 0,
-        
-        // Ride details
         from: formData.from.trim(),
         to: formData.to.trim(),
         date: Timestamp.fromDate(new Date(`${formData.date}T${formData.time}`)),
@@ -54,27 +48,21 @@ export const PostRide: React.FC = () => {
         availableSeats: parseInt(String(formData.availableSeats)) || 1,
         pricePerSeat: parseFloat(String(formData.pricePerSeat)) || 0,
         description: formData.description.trim(),
-        
-        // Vehicle information
         vehicleInfo: userProfile?.vehicleInfo || {
           make: 'Not specified',
           model: 'Not specified',
           color: 'Not specified',
           licensePlate: 'Not specified'
         },
-        
-        // Status and metadata
         status: 'upcoming',
         createdAt: Timestamp.now(),
         passengers: [],
       };
 
-      // Add document to Firestore
       await addDoc(collection(db, 'rides'), rideData);
       
       toast.success('Ride posted successfully!');
       
-      // Reset form
       setFormData({
         from: '',
         to: '',
@@ -85,11 +73,9 @@ export const PostRide: React.FC = () => {
         description: '',
       });
       
-      // Navigate to my rides after short delay
       setTimeout(() => navigate('/my-rides'), 1000);
       
     } catch (error: any) {
-      // Handle errors with user-friendly messages
       let errorMessage = 'Failed to post ride. Please try again.';
       
       if (error?.code === 'unavailable') {
@@ -117,18 +103,25 @@ export const PostRide: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 py-12 px-4">
-      <div className="max-w-3xl mx-auto">
-        <div className="bg-white rounded-2xl shadow-xl p-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-6">Post a Ride</h1>
-          
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* From Location */}
-              <div>
-                <label htmlFor="from" className="block text-sm font-medium text-gray-700 mb-1">
-                  From <span className="text-red-500">*</span>
-                </label>
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Header */}
+        <div className="mb-6">
+          <h1 className="text-3xl font-semibold text-gray-900">Post a ride</h1>
+          <p className="text-gray-600 mt-1">Share your journey and earn money</p>
+        </div>
+        
+        <form onSubmit={handleSubmit} className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 space-y-6">
+          {/* Route */}
+          <div className="space-y-4">
+            <div>
+              <label htmlFor="from" className="block text-sm font-medium text-gray-900 mb-2">
+                Pickup location
+              </label>
+              <div className="relative">
+                <div className="absolute left-4 top-1/2 -translate-y-1/2">
+                  <div className="w-2 h-2 rounded-full bg-gray-400"></div>
+                </div>
                 <input
                   type="text"
                   id="from"
@@ -136,16 +129,20 @@ export const PostRide: React.FC = () => {
                   required
                   value={formData.from}
                   onChange={handleChange}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
-                  placeholder="Starting location"
+                  className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent text-sm"
+                  placeholder="Enter pickup location"
                 />
               </div>
+            </div>
 
-              {/* To Location */}
-              <div>
-                <label htmlFor="to" className="block text-sm font-medium text-gray-700 mb-1">
-                  To <span className="text-red-500">*</span>
-                </label>
+            <div>
+              <label htmlFor="to" className="block text-sm font-medium text-gray-900 mb-2">
+                Dropoff location
+              </label>
+              <div className="relative">
+                <div className="absolute left-4 top-1/2 -translate-y-1/2">
+                  <div className="w-2 h-2 bg-black"></div>
+                </div>
                 <input
                   type="text"
                   id="to"
@@ -153,67 +150,74 @@ export const PostRide: React.FC = () => {
                   required
                   value={formData.to}
                   onChange={handleChange}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
-                  placeholder="Destination"
+                  className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent text-sm"
+                  placeholder="Enter dropoff location"
                 />
               </div>
+            </div>
+          </div>
 
-              {/* Date */}
-              <div>
-                <label htmlFor="date" className="block text-sm font-medium text-gray-700 mb-1">
-                  Date <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="date"
-                  id="date"
-                  name="date"
-                  required
-                  value={formData.date}
-                  onChange={handleChange}
-                  min={new Date().toISOString().split('T')[0]}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
-                />
-              </div>
+          {/* Date & Time */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="date" className="block text-sm font-medium text-gray-900 mb-2">
+                Date
+              </label>
+              <input
+                type="date"
+                id="date"
+                name="date"
+                required
+                value={formData.date}
+                onChange={handleChange}
+                min={new Date().toISOString().split('T')[0]}
+                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent text-sm"
+              />
+            </div>
 
-              {/* Time */}
-              <div>
-                <label htmlFor="time" className="block text-sm font-medium text-gray-700 mb-1">
-                  Time <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="time"
-                  id="time"
-                  name="time"
-                  required
-                  value={formData.time}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
-                />
-              </div>
+            <div>
+              <label htmlFor="time" className="block text-sm font-medium text-gray-900 mb-2">
+                Time
+              </label>
+              <input
+                type="time"
+                id="time"
+                name="time"
+                required
+                value={formData.time}
+                onChange={handleChange}
+                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent text-sm"
+              />
+            </div>
+          </div>
 
-              {/* Available Seats */}
-              <div>
-                <label htmlFor="availableSeats" className="block text-sm font-medium text-gray-700 mb-1">
-                  Available Seats
-                </label>
-                <select
-                  id="availableSeats"
-                  name="availableSeats"
-                  value={formData.availableSeats}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
-                >
-                  {[1, 2, 3, 4, 5, 6].map(num => (
-                    <option key={num} value={num}>{num}</option>
-                  ))}
-                </select>
-              </div>
+          {/* Seats & Price */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="availableSeats" className="block text-sm font-medium text-gray-900 mb-2">
+                Available seats
+              </label>
+              <select
+                id="availableSeats"
+                name="availableSeats"
+                value={formData.availableSeats}
+                onChange={handleChange}
+                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent text-sm"
+              >
+                {[1, 2, 3, 4, 5, 6].map(num => (
+                  <option key={num} value={num}>{num}</option>
+                ))}
+              </select>
+            </div>
 
-              {/* Price Per Seat */}
-              <div>
-                <label htmlFor="pricePerSeat" className="block text-sm font-medium text-gray-700 mb-1">
-                  Price per Seat ($)
-                </label>
+            <div>
+              <label htmlFor="pricePerSeat" className="block text-sm font-medium text-gray-900 mb-2">
+                Price per seat
+              </label>
+              <div className="relative">
+                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 text-sm">
+                  $
+                </div>
                 <input
                   type="number"
                   id="pricePerSeat"
@@ -222,38 +226,38 @@ export const PostRide: React.FC = () => {
                   step="0.01"
                   value={formData.pricePerSeat}
                   onChange={handleChange}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
+                  className="w-full pl-8 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent text-sm"
                   placeholder="0.00"
                 />
               </div>
             </div>
+          </div>
 
-            {/* Description */}
-            <div>
-              <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-1">
-                Description (Optional)
-              </label>
-              <textarea
-                id="description"
-                name="description"
-                rows={4}
-                value={formData.description}
-                onChange={handleChange}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none transition"
-                placeholder="Add any additional details about your ride..."
-              />
-            </div>
+          {/* Description */}
+          <div>
+            <label htmlFor="description" className="block text-sm font-medium text-gray-900 mb-2">
+              Additional details (optional)
+            </label>
+            <textarea
+              id="description"
+              name="description"
+              rows={4}
+              value={formData.description}
+              onChange={handleChange}
+              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent resize-none text-sm"
+              placeholder="Add any preferences or additional information..."
+            />
+          </div>
 
-            {/* Submit Button */}
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full py-3 px-4 bg-gradient-to-r from-blue-500 to-purple-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 transition disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isLoading ? 'Posting...' : 'Post Ride'}
-            </button>
-          </form>
-        </div>
+          {/* Submit */}
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="w-full py-3.5 bg-black text-white font-medium rounded-xl hover:bg-gray-800 transition disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+          >
+            {isLoading ? 'Posting...' : 'Post ride'}
+          </button>
+        </form>
       </div>
     </div>
   );

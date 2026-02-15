@@ -111,7 +111,6 @@ export const FindRide: React.FC = () => {
     const loadingToast = toast.loading('Booking ride...');
 
     try {
-      // ✅ Check for existing bookings
       const existingBookingsQuery = query(
         collection(db, 'bookings'),
         where('rideId', '==', ride.id),
@@ -125,7 +124,6 @@ export const FindRide: React.FC = () => {
         return;
       }
 
-      // ✅ Create chat FIRST, then book the ride
       const chatId = await createOrGetChat(ride);
 
       if (!chatId) {
@@ -134,7 +132,6 @@ export const FindRide: React.FC = () => {
         return;
       }
 
-      // ✅ Book the ride in a transaction
       await runTransaction(db, async (transaction) => {
         const rideRef = doc(db, 'rides', ride.id);
         const rideDoc = await transaction.get(rideRef);
@@ -158,7 +155,7 @@ export const FindRide: React.FC = () => {
           totalPrice: ride.pricePerSeat,
           status: 'confirmed',
           createdAt: Timestamp.now(),
-          chatId: chatId, // ✅ Link to chat
+          chatId: chatId,
         };
 
         transaction.set(bookingRef, bookingData);
@@ -187,7 +184,6 @@ export const FindRide: React.FC = () => {
     }
   };
 
-  // ✅ Return chat ID and ensure both users can access it
   const createOrGetChat = async (ride: Ride): Promise<string | null> => {
     if (!currentUser || !userProfile) {
       console.error('No current user or profile');
@@ -195,7 +191,6 @@ export const FindRide: React.FC = () => {
     }
 
     try {
-      // ✅ Check if chat already exists for this ride
       const chatsRef = collection(db, 'chats');
       const q = query(
         chatsRef,
@@ -210,7 +205,6 @@ export const FindRide: React.FC = () => {
         return existingChats.docs[0].id;
       }
 
-      // ✅ Create new chat with proper structure
       const participants = [currentUser.uid, ride.driverId];
       const chatData = {
         participants: participants,
@@ -240,65 +234,96 @@ export const FindRide: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 py-12 px-4">
-      <div className="max-w-7xl mx-auto">
-        <h1 className="text-3xl font-bold text-gray-900 mb-8">Find a Ride</h1>
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Header */}
+        <div className="mb-6">
+          <h1 className="text-3xl font-semibold text-gray-900">Find a ride</h1>
+          <p className="text-gray-600 mt-1">Search for available rides to your destination</p>
+        </div>
 
-        <div className="bg-white rounded-2xl shadow-xl p-6 mb-8">
-          <form onSubmit={handleSearch} className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <input
-              type="text"
-              value={searchFrom}
-              onChange={(e) => setSearchFrom(e.target.value)}
-              placeholder="From"
-              className="px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-            />
-            <input
-              type="text"
-              value={searchTo}
-              onChange={(e) => setSearchTo(e.target.value)}
-              placeholder="To"
-              className="px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-            />
-            <input
-              type="date"
-              value={searchDate}
-              onChange={(e) => setSearchDate(e.target.value)}
-              min={new Date().toISOString().split('T')[0]}
-              className="px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-            />
+        {/* Search Form */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 mb-8">
+          <form onSubmit={handleSearch} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* From Input */}
+              <div className="relative">
+                <div className="absolute left-4 top-1/2 -translate-y-1/2">
+                  <div className="w-2 h-2 rounded-full bg-gray-400"></div>
+                </div>
+                <input
+                  type="text"
+                  value={searchFrom}
+                  onChange={(e) => setSearchFrom(e.target.value)}
+                  placeholder="Pickup location"
+                  className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent text-sm"
+                />
+              </div>
+
+              {/* To Input */}
+              <div className="relative">
+                <div className="absolute left-4 top-1/2 -translate-y-1/2">
+                  <div className="w-2 h-2 bg-black"></div>
+                </div>
+                <input
+                  type="text"
+                  value={searchTo}
+                  onChange={(e) => setSearchTo(e.target.value)}
+                  placeholder="Dropoff location"
+                  className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent text-sm"
+                />
+              </div>
+
+              {/* Date Input */}
+              <input
+                type="date"
+                value={searchDate}
+                onChange={(e) => setSearchDate(e.target.value)}
+                min={new Date().toISOString().split('T')[0]}
+                className="px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent text-sm"
+              />
+            </div>
+
             <button
               type="submit"
-              className="px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition"
+              className="w-full md:w-auto px-8 py-3 bg-black text-white font-medium rounded-xl hover:bg-gray-800 transition text-sm"
             >
-              Search
+              Search rides
             </button>
           </form>
         </div>
 
+        {/* Results */}
         {loading ? (
-          <div className="text-center py-12">
-            <div className="inline-block h-12 w-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-            <p className="mt-4 text-gray-600">Loading rides...</p>
+          <div className="text-center py-16">
+            <div className="inline-block w-10 h-10 border-3 border-gray-300 border-t-black rounded-full animate-spin mb-4"></div>
+            <p className="text-gray-600">Finding rides...</p>
           </div>
         ) : rides.length === 0 ? (
-          <div className="bg-white rounded-2xl shadow-lg p-12 text-center">
-            <svg className="h-16 w-16 text-gray-400 mx-auto mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">No rides found</h3>
-            <p className="text-gray-600">Try adjusting your search criteria</p>
+          <div className="bg-white rounded-2xl border border-gray-200 p-12 text-center">
+            <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-10 h-10 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <h3 className="text-xl font-medium text-gray-900 mb-2">No rides found</h3>
+            <p className="text-gray-600">Try adjusting your search criteria or check back later</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {rides.map((ride) => (
-              <RideCard
-                key={ride.id}
-                ride={ride}
-                onBook={() => handleBookRide(ride)}
-              />
-            ))}
-          </div>
+          <>
+            <div className="mb-4">
+              <p className="text-sm text-gray-600">{rides.length} {rides.length === 1 ? 'ride' : 'rides'} available</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {rides.map((ride) => (
+                <RideCard
+                  key={ride.id}
+                  ride={ride}
+                  onBook={() => handleBookRide(ride)}
+                />
+              ))}
+            </div>
+          </>
         )}
       </div>
     </div>
