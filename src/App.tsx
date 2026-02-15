@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { Navbar } from './components/Auth/Layout/Navbar';
@@ -14,6 +14,7 @@ import { Profile } from './components/Auth/Profile/Profile';
 
 const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { currentUser, loading } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -23,7 +24,8 @@ const PrivateRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     );
   }
 
-  return currentUser ? <>{children}</> : <Navigate to="/login" />;
+  // ✅ Save intended location
+  return currentUser ? <>{children}</> : <Navigate to="/login" state={{ from: location }} replace />;
 };
 
 const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -37,32 +39,34 @@ const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     );
   }
 
-  return !currentUser ? <>{children}</> : <Navigate to="/" />;
+  return !currentUser ? <>{children}</> : <Navigate to="/" replace />;
 };
 
 function AppRoutes() {
   return (
-    <Router>
-      <AuthProvider>
-        <Toaster position="top-right" />
-        <div className="min-h-screen">
-          <Navbar />
-          <Routes>
-            <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
-            <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
-            <Route path="/" element={<PrivateRoute><Home /></PrivateRoute>} />
-            <Route path="/post-ride" element={<PrivateRoute><PostRide /></PrivateRoute>} />
-            <Route path="/find-rides" element={<PrivateRoute><FindRide /></PrivateRoute>} />
-            <Route path="/my-rides" element={<PrivateRoute><MyRides /></PrivateRoute>} />
-            <Route path="/chat" element={<PrivateRoute><ChatList /></PrivateRoute>} />
-            <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
-          </Routes>
-        </div>
-      </AuthProvider>
-    </Router>
+    <div className="min-h-screen">
+      <Navbar />
+      <Routes>
+        <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+        <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
+        <Route path="/" element={<PrivateRoute><Home /></PrivateRoute>} />
+        <Route path="/post-ride" element={<PrivateRoute><PostRide /></PrivateRoute>} />
+        <Route path="/find-rides" element={<PrivateRoute><FindRide /></PrivateRoute>} />
+        <Route path="/my-rides" element={<PrivateRoute><MyRides /></PrivateRoute>} />
+        <Route path="/chat" element={<PrivateRoute><ChatList /></PrivateRoute>} />
+        <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
+      </Routes>
+    </div>
   );
 }
 
 export function App() {
-  return <AppRoutes />;
+  return (
+    <Router>
+      <AuthProvider>
+        <Toaster position="top-right" />
+        <AppRoutes />
+      </AuthProvider>
+    </Router>
+  );
 }
